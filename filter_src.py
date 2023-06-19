@@ -16,6 +16,9 @@ def skip_from_build(env, node):
         "littlefs/runners",
         "srxecore/main.c",
         "srxecore/smoketest.h",
+        # "u8g2/cppsrc",
+        # "u8g2/sys",
+        # "u8g2/tools",
     ]
     for ignore in ignore_list:
         if ignore in Path(node.get_path()).as_posix():
