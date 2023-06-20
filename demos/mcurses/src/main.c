@@ -29,6 +29,18 @@
 #define SEQ_LOAD_G1                             PSTR("\033)0")                  // load G1 character set
 #define SEQ_CURSOR_VIS                          PSTR("\033[?25")                // set cursor visible/not visible
 
+// https://www.emtec.com/zoc/vt220-terminal-emulator.html
+// ESC [ n @ → Insert n (Blank) Character(s)
+// ESC [ n A → Cursor Up n Times
+// ESC [ n B → Cursor Down n Times
+// ESC [ n C → Cursor Forward n Times
+// ESC [ n D → Cursor Backward n Times
+// ESC [ n ; n H → Cursor Position [row;column]
+// ESC [ n I → Cursor Forward Tabulation n tab ston (default = 1)
+// ESC [ n J → Erase in Display ( n= 0/1/2 → below/above/all)
+// ESC [ n K → Erase in Line ( n= 0/1/2 → left/right/all)
+// ESC [ n K → Set text attributes ( n= 1, highlight; n= 30-37 foreground color)
+
 char lcdBuffer[MCURSES_LINES][MCURSES_COLS];
 
 // assuming a 2D array lcdBufferAttr to hold the attributes of the characters
@@ -55,6 +67,66 @@ int attrBColor = 0;
 char seqBuffer[16];
 int seqIndex = 0;
 
+// cursor movement and screen control
+void cursorUp(int n) {
+    cursorY -= n;
+    if(cursorY < 0)
+        cursorY = 0;
+}
+
+void cursorDown(int n) {
+    cursorY += n;
+    if(cursorY >= LCD_HEIGHT)
+        cursorY = LCD_HEIGHT - 1;
+}
+
+void cursorForward(int n) {
+    cursorX += n;
+    if(cursorX >= LCD_WIDTH)
+        cursorX = LCD_WIDTH - 1;
+}
+
+void cursorBackward(int n) {
+    cursorX -= n;
+    if(cursorX < 0)
+        cursorX = 0;
+}
+
+// Parsing and applying escape sequences
+void parseAndApplySeq() {
+    int param1 = 0;
+    int param2 = 0;
+
+    sscanf(seqBuffer, "\033[%d;%d", &param1, &param2);
+
+    if(strstr(seqBuffer, "@")) {
+        // insert character(s)
+        memmove(&lcdBuffer[cursorY][cursorX + param1],
+                &lcdBuffer[cursorY][cursorX],
+                LCD_WIDTH - cursorX - param1);
+        for(int i = cursorX; i < cursorX + param1; i++)
+            lcdBuffer[cursorY][i] = ' ';
+    } else if(strstr(seqBuffer, "A")) {
+        cursorUp(param1);
+    } else if(strstr(seqBuffer, "B")) {
+        cursorDown(param1);
+    } else if(strstr(seqBuffer, "C")) {
+        cursorForward(param1);
+    } else if(strstr(seqBuffer, "D")) {
+        cursorBackward(param1);
+    } else if(strstr(seqBuffer, "H")) {
+        cursorY = param1 - 1;
+        cursorX = param2 - 1;
+    } else if(strstr(seqBuffer, "J")) {
+        // erase in display
+        //...
+    } else if(strstr(seqBuffer, "K")) {
+        // erase in line
+        //...
+    }
+}
+
+
 void srxe_putchar(uint8_t c) {
     if(c == '\033') {  // ESC
         seqIndex = 0;
@@ -62,7 +134,10 @@ void srxe_putchar(uint8_t c) {
     } else if(seqIndex > 0) {
         seqBuffer[seqIndex++] = c;
         seqBuffer[seqIndex] = '\0';  // null terminate
-        if(strstr(seqBuffer, SEQ_CLEAR)) {
+        if(strchr("@ABCDEFGHIJK", c) != NULL) {
+            parseAndApplySeq();
+            seqIndex = 0;
+        } else if(strstr(seqBuffer, SEQ_CLEAR)) {
             lcdClearScreen();
             cursorX = cursorY = 0;
             seqIndex = 0;
@@ -83,7 +158,6 @@ void srxe_putchar(uint8_t c) {
     } else if(c == '\n') {  // new line
         cursorY++;
         cursorX = 0;
-        lcdPositionSet(0, cursorY*lcdFontHeightGet());
         if(cursorY >= MCURSES_LINES) {
             lcdScrollLines(8);  // scroll up one line if at the bottom
             cursorY = MCURSES_LINES - 1;
@@ -101,6 +175,7 @@ void srxe_putchar(uint8_t c) {
             }
         }
     }
+    lcdPositionSet(cursorX*lcdFontWidthGet(), cursorY*lcdFontHeightGet());
 }
 
 int main() {
@@ -112,7 +187,7 @@ int main() {
 
     initscr();
     move(5, 5);
-    addstr("Hello, world!");
+    addstr("Hello, world!\ntesting 1 2 3\n");
 
     return 1;
 }
